@@ -1,0 +1,6 @@
+super_gradients_ros2_node:
+  ros__parameters:
+    node_rate: 5.0
+    camera_topic: "/camera/color/image_raw"
+    min_prob: 0.5
+    bboxes_topic: "/sg_ros2/bboxes"
