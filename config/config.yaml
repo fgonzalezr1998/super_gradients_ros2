@@ -4,3 +4,5 @@ super_gradients_ros2_node:
     camera_topic: "/camera/color/image_raw"
     min_prob: 0.5
     bboxes_topic: "/sg_ros2/bboxes"
+    publish_image: True
+    image_topic: "/sg_ros2/image"
