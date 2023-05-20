@@ -11,6 +11,7 @@ import cv2
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+import random
 
 class Status:
     def __init__(self):
@@ -24,12 +25,48 @@ class Status:
         self.msg = message
     def is_ok(self):
         return self.status == self.STATUS_OK
+    
+class Painter:
+    def __init__(self):
+        self._MIN_COEFF = 0
+        self._MAX_COEFF = 255
+        self._MIN_SUM = 200
+        self._colours_list = {}
+
+    def _colour_isok(self, colour):
+        l = list(colour)
+        sum = l[0] + l[1] + l[2]
+        
+        if (sum >= self._MIN_SUM):
+            return colour not in self._colours_list
+        else:
+            return False
+            
+
+    def get_colour(self, id):
+        if id in list(self._colours_list):
+            return self._colours_list.get(id)
+        
+        colour_ok = False
+        colour = (None, None, None)
+        while (not colour_ok):
+            # Generate random colour
+            b = random.randint(self._MIN_COEFF, self._MAX_COEFF)
+            g = random.randint(self._MIN_COEFF, self._MAX_COEFF)
+            r = random.randint(self._MIN_COEFF, self._MAX_COEFF)
+            colour = (b, g, r)
+            colour_ok = self._colour_isok(colour)
+        self._colours_list[id] = colour
+
+        return colour
+        
 
 class SuperGradientsNode(Node):
     def __init__(self, node_name):
         super().__init__(node_name)
 
         self._status = Status()
+        self._painter = Painter()
 
         # Get params from config file
 
@@ -99,6 +136,18 @@ class SuperGradientsNode(Node):
         if (not self._image_received):
             self._image_received = True
     
+    def _draw_img(self, img_cv2, bbox, id, score):
+        if (not self._publish_image):
+            return
+
+        bbox_colour = self._painter.get_colour(id)
+        cv2.rectangle(img_cv2,
+            (int(bbox[0].item()), int(bbox[1].item())),
+            (int(bbox[2].item()), int(bbox[3].item())), bbox_colour, 3)
+        cv2.putText(img_cv2, id + " " + str(round(score, 2)),
+            (int(bbox[0].item()), int(bbox[1].item())),
+            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,0,255), 2)
+    
     def _publish_bboxes(self, predictions, raw_img, img_cv2):
         detection_arr = Detection2DArray()
 
@@ -121,21 +170,15 @@ class SuperGradientsNode(Node):
                 detection.bbox.center.y = float(int((bbox[3].item() + bbox[1].item()) / 2))
                 detection.bbox.size_x = float(int(bbox[2].item()) - int(bbox[0].item()))
                 detection.bbox.size_y = float(int(bbox[3].item()) - int(bbox[1].item()))
-                if (self._publish_image):
-                  cv2.rectangle(img_cv2,
-                                (int(bbox[0].item()), int(bbox[1].item())),
-                                (int(bbox[2].item()), int(bbox[3].item())), (255,0,0), 3)
-                  cv2.putText(img_cv2, result.id + " " + str(round(result.score, 2)),
-                              (int(bbox[0].item()), int(bbox[1].item())),
-                              cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,0,255), 2)
 
                 detection.source_img = raw_img
                 detection.is_tracking = False
 
-                detection_arr.detections.append(detection)
-        self._bboxes_pub.publish(detection_arr)
+                self._draw_img(img_cv2, bbox, result.id, result.score)
 
-        # Publish the image
+                detection_arr.detections.append(detection)
+
+        self._bboxes_pub.publish(detection_arr)
         if (self._publish_image):
             img = Image()
             img = self._cv_bridge.cv2_to_imgmsg(img_cv2)
@@ -147,10 +190,11 @@ class SuperGradientsNode(Node):
             if (self._image_received):
                 raw_img = self._last_img_msg
 
-                img_cv2 = self._cv_bridge.imgmsg_to_cv2(self._last_img_msg)
-                img = cv2.cvtColor(img_cv2, cv2.COLOR_BGR2RGB)
+                img_cv2 = self._cv_bridge.imgmsg_to_cv2(self._last_img_msg,
+                                                        self._last_img_msg.encoding)
+                img_cv2 = cv2.cvtColor(img_cv2, cv2.COLOR_RGB2BGR)
 
-                predictions = self._model.predict(img, conf=self._min_prob)
+                predictions = self._model.predict(img_cv2, conf=self._min_prob)
 
                 self._publish_bboxes(predictions, raw_img, img_cv2)
         else:
